@@ -6,7 +6,7 @@ import Doctor from "../models/doctorModel.js";
  */
 const callML = async (symptoms) => {
   const base = process.env.ML_API_URL?.replace(/\/$/, "");
-
+   console.log(base);
   if (!base) {
     throw new Error("ML_API_URL not configured");
   }
