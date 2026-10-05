@@ -1,211 +1,341 @@
-# Prescripto — AI Powered Doctor Appointment & Tele-Consultation Platform
 
-Prescripto is a full-stack healthcare platform that combines appointment booking, real-time tele-consultation and an AI triage engine to guide patients to the correct medical specialist before booking.
+# Prescripto -- AI-Powered Doctor Appointment & Tele-Consultation Platform
 
-Unlike traditional hospital systems where users must manually choose a doctor, Prescripto predicts the appropriate specialist from symptoms and automatically suggests relevant doctors.
+Prescripto is a full-stack healthcare platform combining AI-assisted
+specialist recommendation, doctor appointment booking, online payments,
+real-time communication, and WebRTC-based video consultation.
 
----
+> **Prescripto = AI Triage + Doctor Discovery + Appointment Booking +
+> Payment + Tele-Consultation**
 
 ## 🌐 Live Deployment
 
-* User App: https://medlink360-frontend.onrender.com
-* Admin Panel: https://medlink360-admin.onrender.com
-* Backend API: https://medlink-backend-2bgo.onrender.com
-* AI Service: https://medlink360.onrender.com
+-   **User App:** https://medlink360-frontend.onrender.com
+-   **Admin Panel:** https://medlink360-admin.onrender.com
+-   **Backend API:** https://medlink-backend-2bgo.onrender.com
+-   **AI Service:** https://medlink360.onrender.com
 
----
+------------------------------------------------------------------------
 
-## 🧠 Problem Statement
+## 🎯 Problem Statement
 
-Patients frequently book the wrong specialist due to lack of medical knowledge, resulting in:
+Patients may not know which medical specialist they should consult.
+Prescripto introduces an AI triage layer before doctor selection and
+booking.
 
-* incorrect appointments
-* longer diagnosis cycles
-* hospital congestion
-* repeated bookings
-
-Prescripto introduces an **AI medical triage layer** before booking.
-
-### System Flow
-
-```
-User Symptoms → Backend API → ML Model → Predicted Specialist
-               ↓
-        Matching Doctors → Instant Booking → Consultation
-```
-
-The platform therefore acts as both:
-
-1. Appointment Booking System
-2. AI Medical Triage Assistant
-
----
-
-## 👥 System Roles
-
-### 👤 Patient
-
-* Authentication (JWT)
-* AI-based specialist prediction
-* Doctor recommendations
-* Book / cancel appointments
-* Razorpay payment integration
-* Appointment history
-* Real-time chat & video consultation
-
-### 🧑‍⚕️ Doctor
-
-* Secure dashboard login
-* Live consultation room (WebRTC)
-* Chat with patient
-* Mark appointment complete
-* Cancel unpaid bookings
-* Update availability & profile
-* Earnings dashboard
-
-### 🛠️ Admin
-
-* Add / manage doctors
-* Toggle availability
-* Monitor all appointments
-* Cancel bookings
-* Analytics dashboard
-
----
-
-## 🤖 AI Recommendation Engine
-
-Users select symptoms instead of manually choosing departments.
-
-```
-Symptoms → ML Model → Specialist → Doctor List
+``` text
+Patient Symptoms
+       │
+       ▼
+   Backend API
+       │
+       ▼
+  ML Prediction
+       │
+       ▼
+Recommended Specialist
+       │
+       ▼
+Matching Doctors
+       │
+       ▼
+Appointment Booking
+       │
+       ▼
+     Payment
+       │
+       ▼
+Tele-Consultation
 ```
 
-Model prevents incorrect booking and reduces hospital triage workload.
+------------------------------------------------------------------------
 
-Model served via FastAPI inference server.
+# ✨ Key Features
 
----
+### Patient
 
-## 🏗️ Architecture
+-   JWT authentication
+-   Profile management
+-   AI-based specialist recommendation
+-   Doctor discovery
+-   Appointment booking and cancellation
+-   Appointment history
+-   Razorpay payments
+-   Real-time chat
+-   WebRTC video consultation
 
-### High Level Architecture
+### Doctor
 
+-   Secure login
+-   Profile management
+-   Availability management
+-   Appointment management
+-   Appointment completion
+-   Cancellation of unpaid appointments
+-   Earnings dashboard
+-   Real-time consultation
+
+### Admin
+
+-   Admin authentication
+-   Add and manage doctors
+-   Toggle doctor availability
+-   View and cancel appointments
+-   Dashboard analytics
+
+------------------------------------------------------------------------
+
+# 🤖 AI Medical Triage
+
+``` mermaid
+flowchart LR
+    S[Patient Symptoms] --> API[Node.js Backend]
+    API --> ML[FastAPI ML Service]
+    ML --> MODEL[Scikit-learn Model]
+    MODEL --> SP[Predicted Specialist]
+    SP --> API
+    API --> DB[(MongoDB)]
+    DB --> DOC[Matching Doctors]
 ```
-Frontend (React)
-       ↓
-Node.js API Server
-       ↓
-MongoDB Database
-       ↓
-FastAPI ML Service
-       ↓
-Socket.IO Signaling Server
-       ↓
-WebRTC Peer-to-Peer Call
+
+The ML inference service uses Python, FastAPI, Scikit-learn, and Joblib.
+
+------------------------------------------------------------------------
+
+# 🏗️ System Architecture
+
+``` mermaid
+flowchart TD
+    U[Patient] --> FE[React Patient App]
+    D[Doctor] --> FE
+    A[Admin] --> ADMIN[React Admin Panel]
+
+    FE --> API[Node.js + Express]
+    ADMIN --> API
+
+    API --> DB[(MongoDB)]
+    API --> REDIS[(Redis)]
+    API --> ML[FastAPI ML Service]
+    API --> PAY[Razorpay]
+    API --> CLOUD[Cloudinary]
+    API --> SOCKET[Socket.IO Signaling]
+
+    SOCKET --> WEBRTC[WebRTC]
+    U -. Peer-to-Peer Media .-> WEBRTC
+    D -. Peer-to-Peer Media .-> WEBRTC
 ```
 
-### Realtime Consultation Logic
+------------------------------------------------------------------------
 
-Server maintains authoritative room state.
+# ⚡ Redis
 
-* Doctor joins + Patient joins → `room-ready`
-* Only then call allowed
-* Prevents ghost calls & duplicate peers
-* Automatic disconnect handling
+Redis is used for **caching and distributed locking**.
 
----
+## Doctor List Caching
 
-## 🧰 Tech Stack
+``` mermaid
+flowchart TD
+    R[Doctor List Request] --> C{Redis Cache}
+    C -->|HIT| H[Return Cached Doctors]
+    C -->|MISS| M[Query MongoDB]
+    M --> SET[Cache Result]
+    SET --> OUT[Return Doctors]
+    H --> OUT
+```
 
-### Frontend
+Cache key:
 
-* React (Vite)
-* Context API state management
-* Tailwind CSS
-* Socket.IO client
-* WebRTC media handling
+``` text
+doctors:list
+```
+
+TTL:
+
+``` text
+600 seconds
+```
+
+The cache is invalidated whenever relevant doctor availability or
+appointment-slot data changes.
+
+
+------------------------------------------------------------------------
+
+# 📅 Appointment Booking
+
+``` mermaid
+sequenceDiagram
+    participant U as Patient
+    participant API as Backend
+    participant R as Redis
+    participant DB as MongoDB
+
+    U->>API: Book appointment
+    API->>R: Acquire slot lock
+
+    alt Lock unavailable
+        R-->>API: Reject lock
+        API-->>U: Try again
+    else Lock acquired
+        R-->>API: Lock acquired
+        API->>DB: Find doctor
+        API->>DB: Check slot
+
+        alt Slot unavailable
+            API->>R: Release lock
+            API-->>U: Slot unavailable
+        else Slot available
+            API->>DB: Create appointment
+            API->>DB: Update doctor slot
+            API->>R: Invalidate doctors:list
+            API->>R: Release lock
+            API-->>U: Appointment created
+        end
+    end
+```
+
+------------------------------------------------------------------------
+
+# 💳 Payment Flow
+
+``` mermaid
+sequenceDiagram
+    participant U as Patient
+    participant API as Backend
+    participant RP as Razorpay
+    participant DB as MongoDB
+
+    U->>API: Request payment order
+    API->>DB: Validate appointment
+    API->>RP: Create order
+    RP-->>API: Order details
+    API-->>U: Payment order
+
+    U->>RP: Complete payment
+    RP-->>U: Payment ID + signature
+
+    U->>API: Verify payment
+    API->>API: Generate HMAC signature
+    API->>RP: Fetch order
+    RP-->>API: Order details
+    API->>DB: Mark appointment paid
+    API-->>U: Payment verified
+```
+
+------------------------------------------------------------------------
+
+# 🎥 Tele-Consultation
+
+Prescripto uses Socket.IO for signaling and WebRTC for peer-to-peer
+media.
+
+The consultation room maintains authoritative room state and handles
+room readiness, duplicate peers, and disconnects.
+
+------------------------------------------------------------------------
+
+# 🧰 Tech Stack
+
+  Layer             Technologies
+  ----------------- ----------------------------------------
+  Frontend          React, Vite, Tailwind CSS, Context API
+  Backend           Node.js, Express.js
+  Database          MongoDB, Mongoose
+  Cache & Locking   Redis
+  Authentication    JWT, bcrypt
+  Real-Time         Socket.IO
+  Video             WebRTC, ICE/STUN
+  Payments          Razorpay
+  Media Storage     Cloudinary, Multer
+  ML                Python, FastAPI, Scikit-learn, Joblib
+  Deployment        Render
+
+------------------------------------------------------------------------
+
+# 📡 REST API
+
+## Admin --- `/api/admin`
+
+  Method   Endpoint                     Description
+  -------- ---------------------------- ---------------------
+  POST     `/login`                     Admin login
+  POST     `/add-doctor`                Add doctor
+  GET      `/all-doctor`                List doctors
+  PATCH    `/change-availability/:id`   Toggle availability
+  GET      `/appointments`              View appointments
+  POST     `/cancel-appointment`        Cancel appointment
+  GET      `/dashboard`                 Analytics
+
+## Doctor --- `/api/doctor`
+
+  Method   Endpoint                  Description
+  -------- ------------------------- ---------------------------
+  POST     `/login`                  Doctor login
+  GET      `/appointments`           Doctor appointments
+  POST     `/complete-appointment`   Complete appointment
+  POST     `/cancel-appointment`     Cancel unpaid appointment
+  GET      `/dashboard`              Earnings
+  GET      `/profile`                Doctor profile
+  POST     `/update-profile`         Update profile
+
+## User --- `/api/user`
+
+  Method   Endpoint                Description
+  -------- ----------------------- ----------------------
+  POST     `/register`             Register
+  POST     `/login`                Login
+  GET      `/get-profile`          Get profile
+  POST     `/update-profile`       Update profile
+  POST     `/book-appointment`     Book appointment
+  GET      `/appointments`         Appointment history
+  POST     `/cancel-appointment`   Cancel appointment
+  POST     `/payment-razorpay`     Create payment order
+  POST     `/verifyRazorpay`       Verify payment
+
+## AI Recommendation --- `/api/ai-recommend`
+
+  Method   Endpoint     Description
+  -------- ------------ ----------------------------------
+  POST     `/predict`   Predict specialist from symptoms
+
+------------------------------------------------------------------------
+
+# 📁 Project Structure
+
+``` text
+Doctor-client/
+├── admin/
+├── frontend/
+├── backend/
+│   ├── config/
+│   │   ├── mongodb.js
+│   │   ├── cloudinary.js
+│   │   └── redis.js
+│   ├── controllers/
+│   ├── models/
+│   ├── routes/
+│   ├── middlewares/
+│   ├── socket/
+│   ├── utils/
+│   ├── server.js
+│   ├── package.json
+│   └── .env
+├── ml-service/
+├── .gitignore
+└── README.md
+```
+
+> The existing repository contains the controller directory as
+> `contollers/` and the user controller file as `uerController.js`;
+> those names are preserved here to match the current project.
+
+------------------------------------------------------------------------
+
+# ⚙️ Local Setup
 
 ### Backend
 
-* Node.js
-* Express.js
-* MongoDB + Mongoose
-* JWT Authentication
-* Cloudinary media storage
-* Multer uploads
-
-### Realtime
-
-* Socket.IO signaling
-* WebRTC peer-to-peer video calling
-* ICE/STUN negotiation
-
-### Payments
-
-* Razorpay order + verification
-
-### Machine Learning
-
-* Python FastAPI inference server
-* Scikit-learn classification model
-* Joblib serialized model
-
----
-
-## 📡 REST API Structure
-
-### Admin `/api/admin`
-
-| Method | Route                    | Description         |
-| ------ | ------------------------ | ------------------- |
-| POST   | /login                   | Admin login         |
-| POST   | /add-doctor              | Add doctor          |
-| GET    | /all-doctor              | List doctors        |
-| PATCH  | /change-availability/:id | Toggle availability |
-| GET    | /appointments            | All bookings        |
-| POST   | /cancel-appointment      | Cancel booking      |
-| GET    | /dashboard               | Analytics           |
-
-### Doctor `/api/doctor`
-
-| Method | Route                 | Description     |
-| ------ | --------------------- | --------------- |
-| POST   | /login                | Doctor login    |
-| GET    | /appointments         | Doctor bookings |
-| POST   | /complete-appointment | Mark complete   |
-| POST   | /cancel-appointment   | Cancel unpaid   |
-| GET    | /dashboard            | Earnings        |
-| GET    | /profile              | Doctor profile  |
-| POST   | /update-profile       | Update profile  |
-
-### User `/api/user`
-
-| Method | Route               | Description    |
-| ------ | ------------------- | -------------- |
-| POST   | /register           | Register       |
-| POST   | /login              | Login          |
-| GET    | /get-profile        | Profile        |
-| POST   | /update-profile     | Update profile |
-| POST   | /book-appointment   | Book           |
-| GET    | /appointments       | History        |
-| POST   | /cancel-appointment | Cancel         |
-| POST   | /payment-razorpay   | Create order   |
-| POST   | /verifyRazorpay     | Verify payment |
-
-### AI Recommendation `/api/ai-recommend`
-
-| Method | Route    | Description                      |
-| ------ | -------- | -------------------------------- |
-| POST   | /predict | Predict specialist from symptoms |
-
----
-
-## ⚙️ Local Setup
-
-### Backend
-
-```
+``` bash
 cd backend
 npm install
 npm run dev
@@ -213,7 +343,7 @@ npm run dev
 
 ### Frontend
 
-```
+``` bash
 cd frontend
 npm install
 npm run dev
@@ -221,35 +351,144 @@ npm run dev
 
 ### Admin
 
-```
+``` bash
 cd admin
 npm install
 npm run dev
 ```
 
-### AI Server
+### AI Service
 
-```
+``` bash
 cd ml-service
 pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
----
+------------------------------------------------------------------------
 
-## 🔐 Environment Variables
+# 🔐 Environment Variables
 
-Create `.env` files using `.env.example`
+Create `.env` files using `.env.example`.
 
----
+### Backend
 
-## Key Engineering Highlights
+``` env
+MONGODB_URL=
+JWT_SECRET=
 
-* Authoritative real-time consultation room state
-* Duplicate message prevention
-* Secure role-based JWT authorization
-* Payment verification workflow
-* ML inference microservice architecture
-* Peer-to-peer WebRTC video consultation
+CLOUDINARY_NAME=
+CLOUDINARY_API_KEY=
+CLOUDINARY_SECRET_KEY=
 
----
+RAZORPAY_KEY_ID=
+RAZORPAY_SECRET=
+
+ML_API_URL=
+
+REDIS_URL=
+```
+
+For local Redis:
+
+``` env
+REDIS_URL=redis://localhost:6379
+```
+
+For production, configure `REDIS_URL` using the Redis connection URL
+provided by the deployment platform.
+
+**Never commit real credentials or connection secrets to GitHub.**
+
+------------------------------------------------------------------------
+
+# 🔒 Security
+
+-   JWT authentication
+-   Role-based authorization
+-   bcrypt password hashing
+-   Razorpay server-side signature verification
+-   Environment-based secrets
+-   Protected admin/doctor operations
+-   Redis distributed locking for appointment concurrency
+
+------------------------------------------------------------------------
+
+# 🧪 Engineering Highlights
+
+-   **AI-assisted triage:** symptoms are converted into a recommended
+    specialist.
+-   **Separate ML service:** FastAPI provides independent model
+    inference.
+-   **Redis caching:** frequently requested doctor data is cached.
+-   **Distributed locking:** concurrent requests for the same
+    appointment slot are serialized.
+-   **Cache invalidation:** doctor cache is invalidated after relevant
+    mutations.
+-   **Payment verification:** Razorpay signatures are verified
+    server-side.
+-   **Real-time signaling:** Socket.IO coordinates consultation setup.
+-   **Peer-to-peer video:** WebRTC handles media communication.
+-   **Authoritative consultation state:** the server controls room
+    readiness and participant state.
+
+------------------------------------------------------------------------
+
+# 📊 Feature Status
+
+  Feature                        Status
+  ------------------------------ --------
+  Patient Authentication         ✅
+  Doctor Authentication          ✅
+  Admin Authentication           ✅
+  Doctor Management              ✅
+  Appointment Booking            ✅
+  Appointment Cancellation       ✅
+  Appointment History            ✅
+  Razorpay Payment               ✅
+  AI Specialist Recommendation   ✅
+  Doctor Recommendation          ✅
+  Redis Caching                  ✅
+  Redis Distributed Locking      ✅
+  Real-Time Chat                 ✅
+  WebRTC Video Consultation      ✅
+  Admin Analytics                ✅
+  Separate ML Service            ✅
+  Cloud Deployment               ✅
+
+------------------------------------------------------------------------
+
+
+
+# 🏁 Project Summary
+
+Prescripto demonstrates an end-to-end healthcare platform that combines:
+
+``` text
+AI Triage
+     +
+Doctor Discovery
+     +
+Appointment Booking
+     +
+Redis Caching
+     +
+Distributed Locking
+     +
+Online Payments
+     +
+Real-Time Communication
+     +
+WebRTC Video Consultation
+```
+
+The project is designed to demonstrate practical full-stack engineering
+together with machine learning integration, real-time systems, caching,
+concurrency control, and cloud deployment.
+
+------------------------------------------------------------------------
+
+## 👨‍💻 Author
+
+**Piyush Mishra**\
+B.Tech --- IIIT Bhopal
