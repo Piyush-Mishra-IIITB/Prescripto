@@ -4,72 +4,164 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import messageModel from "../models/messageModel.js";
+import { redisClient } from "../config/redis.js";
+
+/* =========================================================
+   REDIS CACHE INVALIDATION
+========================================================= */
+
+const invalidateDoctorListCache = async () => {
+  if (!redisClient.isReady) return;
+
+  try {
+    await redisClient.del("doctors:list");
+    console.log("Doctor list cache invalidated");
+  } catch (error) {
+    console.log("Redis DEL failed:", error.message);
+  }
+};
 
 /* =========================================================
    CHANGE AVAILABILITY
 ========================================================= */
+
 const changeAvailability = async (req, res) => {
   try {
     const { id } = req.params;
 
     const doctor = await doctorModel.findById(id);
+
     if (!doctor)
-      return res.json({ success: false, message: "Doctor not found" });
+      return res.json({
+        success: false,
+        message: "Doctor not found",
+      });
 
     doctor.available = !doctor.available;
+
     await doctor.save();
+
+    // Doctor availability changed
+    await invalidateDoctorListCache();
 
     res.json({
       success: true,
       message: "Availability updated",
       available: doctor.available,
     });
-
   } catch (error) {
     console.log(error);
-    res.json({ success: false, message: "Error updating availability" });
+
+    res.json({
+      success: false,
+      message: "Error updating availability",
+    });
   }
 };
-
 
 /* =========================================================
    GET ALL DOCTORS (PUBLIC)
 ========================================================= */
+
 const doctorList = async (req, res) => {
+  const cacheKey = "doctors:list";
+
   try {
+    // ================= REDIS CACHE =================
+
+    let cachedDoctors = null;
+
+    if (redisClient.isReady) {
+      try {
+        cachedDoctors = await redisClient.get(cacheKey);
+      } catch (redisError) {
+        console.log("Redis GET failed:", redisError.message);
+      }
+    }
+
+    // ================= CACHE HIT =================
+
+    if (cachedDoctors) {
+      console.log("Redis Cache HIT:", cacheKey);
+
+      return res.json({
+        success: true,
+        doctors: JSON.parse(cachedDoctors),
+      });
+    }
+
+    console.log("Redis Cache MISS:", cacheKey);
+
+    // ================= MONGODB =================
+
     const doctors = await doctorModel
       .find({})
       .select("-password -email")
       .lean();
 
-    res.json({ success: true, doctors });
+    // ================= REDIS CACHE SET =================
 
+    if (redisClient.isReady) {
+      try {
+        await redisClient.set(cacheKey, JSON.stringify(doctors), {
+          EX: 600,
+        });
+
+        console.log("Doctors cached in Redis");
+      } catch (redisError) {
+        console.log("Redis SET failed:", redisError.message);
+      }
+    }
+
+    // ================= RESPONSE =================
+
+    return res.json({
+      success: true,
+      doctors,
+    });
   } catch (error) {
-    console.log(error);
-    res.json({ success: false, message: error.message });
+    console.log("Doctor list error:", error.message);
+
+    return res.json({
+      success: false,
+      message: error.message,
+    });
   }
 };
-
 
 /* =========================================================
    DOCTOR LOGIN
 ========================================================= */
+
 const loginDoctor = async (req, res) => {
   try {
     const { email, password } = req.body;
 
     const doctor = await doctorModel.findOne({ email });
+
     if (!doctor)
-      return res.json({ success: false, message: "Invalid email" });
+      return res.json({
+        success: false,
+        message: "Invalid email",
+      });
 
     const isMatch = await bcrypt.compare(password, doctor.password);
+
     if (!isMatch)
-      return res.json({ success: false, message: "Invalid password" });
+      return res.json({
+        success: false,
+        message: "Invalid password",
+      });
 
     const token = jwt.sign(
-      { id: doctor._id, role: "doctor" },
+      {
+        id: doctor._id,
+        role: "doctor",
+      },
       process.env.JWT_SECRET,
-      { expiresIn: "7d" }
+      {
+        expiresIn: "7d",
+      },
     );
 
     res.json({
@@ -81,17 +173,20 @@ const loginDoctor = async (req, res) => {
         email: doctor.email,
       },
     });
-
   } catch (error) {
     console.log(error);
-    res.json({ success: false, message: error.message });
+
+    res.json({
+      success: false,
+      message: error.message,
+    });
   }
 };
-
 
 /* =========================================================
    GET DOCTOR APPOINTMENTS
 ========================================================= */
+
 const appointmentsDoctor = async (req, res) => {
   try {
     const docId = new mongoose.Types.ObjectId(req.docId);
@@ -100,42 +195,53 @@ const appointmentsDoctor = async (req, res) => {
       .find({ docId })
       .populate("userId", "name image dob")
       .select(
-        "_id userId slotDate slotTime amount payment cancelled isCompleted doctorUnreadCount lastMessage lastMessageAt"
+        "_id userId slotDate slotTime amount payment cancelled isCompleted doctorUnreadCount lastMessage lastMessageAt",
       )
       .sort({ createdAt: -1 })
       .lean();
 
-    // ⭐ normalize response for frontend
-    const normalized = appointments.map(appt => ({
+    // normalize response for frontend
+
+    const normalized = appointments.map((appt) => ({
       ...appt,
 
       // frontend expects userData
+
       userData: appt.userId
         ? {
             name: appt.userId.name,
             image: appt.userId.image,
-            dob: appt.userId.dob
+            dob: appt.userId.dob,
           }
         : {
             name: "Unknown",
-            image: ""
+            image: "",
           },
 
-      // optional: remove raw mongo object (clean API)
-      userId: appt.userId?._id || appt.userId
+      // optional: remove raw mongo object
+      // and return only user id
+
+      userId: appt.userId?._id || appt.userId,
     }));
 
-    res.json({ success: true, appointments: normalized });
-
+    res.json({
+      success: true,
+      appointments: normalized,
+    });
   } catch (error) {
     console.log(error);
-    res.json({ success: false, message: error.message });
+
+    res.json({
+      success: false,
+      message: error.message,
+    });
   }
 };
 
 /* =========================================================
    COMPLETE APPOINTMENT
 ========================================================= */
+
 const appointmentComplete = async (req, res) => {
   try {
     const docId = new mongoose.Types.ObjectId(req.docId);
@@ -146,30 +252,42 @@ const appointmentComplete = async (req, res) => {
         _id: new mongoose.Types.ObjectId(appointmentId),
         docId,
         cancelled: false,
-        isCompleted: false
+        isCompleted: false,
       },
-      { $set: { isCompleted: true } },
-      { new: true }
+      {
+        $set: {
+          isCompleted: true,
+        },
+      },
+      {
+        new: true,
+      },
     );
 
     if (!appointment)
       return res.json({
         success: false,
-        message: "Cannot complete cancelled/invalid appointment"
+        message: "Cannot complete cancelled/invalid appointment",
       });
 
-    res.json({ success: true, message: "Appointment completed" });
-
+    res.json({
+      success: true,
+      message: "Appointment completed",
+    });
   } catch (error) {
     console.log(error);
-    res.json({ success: false, message: error.message });
+
+    res.json({
+      success: false,
+      message: error.message,
+    });
   }
 };
-
 
 /* =========================================================
    CANCEL APPOINTMENT
 ========================================================= */
+
 const appointmentCancel = async (req, res) => {
   try {
     const docId = new mongoose.Types.ObjectId(req.docId);
@@ -181,40 +299,57 @@ const appointmentCancel = async (req, res) => {
         docId,
         cancelled: false,
         isCompleted: false,
-        payment: false
+        payment: false,
       },
-      { $set: { cancelled: true } },
-      { new: true }
+      {
+        $set: {
+          cancelled: true,
+        },
+      },
+      {
+        new: true,
+      },
     );
 
     if (!appointment)
       return res.json({
         success: false,
-        message: "Cannot cancel paid/completed appointment"
+        message: "Cannot cancel paid/completed appointment",
       });
 
-    // free slot
+    // ================= FREE SLOT =================
+
     const doctor = await doctorModel.findById(docId);
+
     if (doctor?.slots_booked?.[appointment.slotDate]) {
-      doctor.slots_booked[appointment.slotDate] =
-        doctor.slots_booked[appointment.slotDate].filter(
-          (t) => t !== appointment.slotTime
-        );
+      doctor.slots_booked[appointment.slotDate] = doctor.slots_booked[
+        appointment.slotDate
+      ].filter((t) => t !== appointment.slotTime);
+
       await doctor.save();
+
+      // Doctor slots changed
+      await invalidateDoctorListCache();
     }
 
-    res.json({ success: true, message: "Appointment cancelled" });
-
+    res.json({
+      success: true,
+      message: "Appointment cancelled",
+    });
   } catch (error) {
     console.log(error);
-    res.json({ success: false, message: error.message });
+
+    res.json({
+      success: false,
+      message: error.message,
+    });
   }
 };
-
 
 /* =========================================================
    DOCTOR DASHBOARD
 ========================================================= */
+
 const doctorDashboard = async (req, res) => {
   try {
     const docId = new mongoose.Types.ObjectId(req.docId);
@@ -226,6 +361,7 @@ const doctorDashboard = async (req, res) => {
 
     appointments.forEach((item) => {
       if (item.isCompleted || item.payment) earnings += item.amount;
+
       if (item.userId) patients.add(item.userId.toString());
     });
 
@@ -233,67 +369,93 @@ const doctorDashboard = async (req, res) => {
       earnings,
       appointments: appointments.length,
       patients: patients.size,
+
       latestAppointments: appointments
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
         .slice(0, 5),
     };
 
-    res.json({ success: true, dashData });
-
+    res.json({
+      success: true,
+      dashData,
+    });
   } catch (error) {
     console.log(error);
-    res.json({ success: false, message: error.message });
+
+    res.json({
+      success: false,
+      message: error.message,
+    });
   }
 };
-
 
 /* =========================================================
    GET DOCTOR PROFILE
 ========================================================= */
+
 const doctorProfile = async (req, res) => {
   try {
     const docId = req.docId;
 
-    const profileData = await doctorModel
-      .findById(docId)
-      .select("-password");
+    const profileData = await doctorModel.findById(docId).select("-password");
 
     if (!profileData)
-      return res.json({ success: false, message: "Profile not found" });
+      return res.json({
+        success: false,
+        message: "Profile not found",
+      });
 
-    res.json({ success: true, profileData });
-
+    res.json({
+      success: true,
+      profileData,
+    });
   } catch (error) {
     console.log(error);
-    res.json({ success: false, message: error.message });
+
+    res.json({
+      success: false,
+      message: error.message,
+    });
   }
 };
-
 
 /* =========================================================
    UPDATE DOCTOR PROFILE
 ========================================================= */
+
 const updateDoctorPeofile = async (req, res) => {
   try {
     const docId = req.docId;
+
     const { fees, address, available } = req.body;
 
     await doctorModel.findByIdAndUpdate(docId, {
       fees,
       address,
-      available
+      available,
     });
 
-    res.json({ success: true, message: "Profile updated" });
+    // Doctor profile changed
+    await invalidateDoctorListCache();
 
+    res.json({
+      success: true,
+      message: "Profile updated",
+    });
   } catch (error) {
     console.log(error);
-    res.json({ success: false, message: error.message });
+
+    res.json({
+      success: false,
+      message: error.message,
+    });
   }
 };
 
-// GET all chats with unread messages
-// GET Doctor unread conversation queue
+/* =========================================================
+   GET DOCTOR UNREAD CHATS
+========================================================= */
+
 const getUnreadChats = async (req, res) => {
   try {
     const doctorId = new mongoose.Types.ObjectId(req.docId);
@@ -302,82 +464,131 @@ const getUnreadChats = async (req, res) => {
       .find({
         docId: doctorId,
         cancelled: false,
-        doctorUnreadCount: { $gt: 0 }
+        doctorUnreadCount: { $gt: 0 },
       })
       .sort({ updatedAt: -1 })
       .lean();
 
     const conversations = appointments.map((appt) => {
-
       let slotLabel = "";
+
       if (appt.slotDate && appt.slotTime) {
         const parts = appt.slotDate.split("_");
-        const months = ["","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+        const months = [
+          "",
+          "Jan",
+          "Feb",
+          "Mar",
+          "Apr",
+          "May",
+          "Jun",
+          "Jul",
+          "Aug",
+          "Sep",
+          "Oct",
+          "Nov",
+          "Dec",
+        ];
+
         slotLabel = `${parts[0]} ${months[Number(parts[1])]} | ${appt.slotTime}`;
       }
 
       return {
         appointmentId: appt._id,
+
         patientName: appt.userData?.name || appt.userId?.name || "Patient",
+
         patientImage: appt.userData?.image || null,
+
         lastMessage: appt.lastMessage || "New message",
+
         lastMessageTime: appt.lastMessageAt || appt.updatedAt,
+
         unreadCount: appt.doctorUnreadCount || 0,
-        slotLabel
+
+        slotLabel,
       };
     });
 
-    const totalUnread = conversations.reduce((sum, c) => sum + c.unreadCount, 0);
+    const totalUnread = conversations.reduce(
+      (sum, c) => sum + c.unreadCount,
+      0,
+    );
 
     res.json({
       success: true,
       totalUnread,
-      conversations
+      conversations,
     });
-
   } catch (error) {
     console.log("Unread chat error:", error);
-    res.json({ success: false, message: error.message });
+
+    res.json({
+      success: false,
+      message: error.message,
+    });
   }
 };
 
-// mark as read
-// MARK CHAT AS READ (doctor opens chat)
+/* =========================================================
+   MARK CHAT AS READ
+========================================================= */
+
 const markChatAsRead = async (req, res) => {
   try {
-
     const doctorId = new mongoose.Types.ObjectId(req.docId);
+
     const appointmentId = new mongoose.Types.ObjectId(req.body.appointmentId);
 
     const appt = await appointmentModel.findOne({
       _id: appointmentId,
-      docId: doctorId
+      docId: doctorId,
     });
 
     if (!appt)
-      return res.json({ success: false, message: "Appointment not found" });
+      return res.json({
+        success: false,
+        message: "Appointment not found",
+      });
 
     // reset unread counter
+
     appt.doctorUnreadCount = 0;
+
     await appt.save();
 
     // mark all patient messages as seen
+
     await messageModel.updateMany(
       {
         appointmentId: appointmentId,
         sender: "patient",
-        seen: false
+        seen: false,
       },
-      { $set: { seen: true } }
+      {
+        $set: {
+          seen: true,
+        },
+      },
     );
 
-    res.json({ success: true });
-
+    res.json({
+      success: true,
+    });
   } catch (error) {
     console.log("mark read error:", error);
-    res.json({ success: false, message: error.message });
+
+    res.json({
+      success: false,
+      message: error.message,
+    });
   }
 };
+
+/* =========================================================
+   EXPORTS
+========================================================= */
 
 export {
   changeAvailability,
@@ -390,5 +601,5 @@ export {
   updateDoctorPeofile,
   doctorProfile,
   getUnreadChats,
-  markChatAsRead
-}; 
+  markChatAsRead,
+};

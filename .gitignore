@@ -2,7 +2,7 @@ node_modules
 .env
 dist
 build
-
+.DS_Store
 logs
 __pycache__/
 *.pyc
