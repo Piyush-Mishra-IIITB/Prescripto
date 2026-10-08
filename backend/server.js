@@ -15,6 +15,7 @@ import adminRouter from "./routes/adminRoutes.js";
 import doctorRouter from "./routes/doctorRoutes.js";
 import userRouter from "./routes/userRoutes.js";
 import recommendRouter from "./routes/recommendRoutes.js";
+import ragRouter from "./routes/ragRoutes.js";
 
 import appointmentModel from "./models/appointmentModel.js";
 import messageModel from "./models/messageModel.js";
@@ -34,6 +35,7 @@ app.use("/api/admin", adminRouter);
 app.use("/api/doctor", doctorRouter);
 app.use("/api/user", userRouter);
 app.use("/api", recommendRouter);
+app.use("/api/rag", ragRouter);
 
 const server = http.createServer(app);
 const consultationRooms = new Map();

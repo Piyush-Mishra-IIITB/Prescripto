@@ -7,6 +7,6 @@ logs
 __pycache__/
 *.pyc
 venv/
-
+dump.rdb
 # uploads
 uploads/

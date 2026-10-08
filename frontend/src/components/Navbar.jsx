@@ -14,10 +14,10 @@ function Navbar() {
   };
 
   const goToDoctorPanel = () => {
-  window.location.href = import.meta.env.VITE_DOCTOR_PANEL_URL;
-};
+    window.location.href = import.meta.env.VITE_DOCTOR_PANEL_URL;
+  };
 
-  // desktop active style
+  // Desktop active style
   const navItem = ({ isActive }) =>
     `py-1 transition border-b-2 ${
       isActive
@@ -25,15 +25,12 @@ function Navbar() {
         : "text-gray-700 border-transparent hover:text-primary"
     }`;
 
-  // mobile active style
+  // Mobile active style
   const mobileItem = ({ isActive }) =>
-    `transition ${
-      isActive ? "text-primary font-semibold" : "text-gray-700"
-    }`;
+    `transition ${isActive ? "text-primary font-semibold" : "text-gray-700"}`;
 
   return (
     <div className="flex items-center justify-between py-4 px-8 border-b bg-white shadow-sm">
-
       {/* Logo */}
       <img
         onClick={() => navigate("/")}
@@ -44,22 +41,33 @@ function Navbar() {
 
       {/* Desktop Links */}
       <ul className="hidden md:flex items-start gap-6 font-medium">
+        <NavLink to="/" end className={navItem}>
+          <li>Home</li>
+        </NavLink>
 
-        <NavLink to="/" end className={navItem}><li>Home</li></NavLink>
+        <NavLink to="/doctors" className={navItem}>
+          <li>All Doctors</li>
+        </NavLink>
 
-        <NavLink to="/doctors" className={navItem}><li>All Doctors</li></NavLink>
+        <NavLink to="/ai-consult" className={navItem}>
+          <li>AI Recommend</li>
+        </NavLink>
 
-        <NavLink to="/ai-consult" className={navItem}><li>AI Recommend</li></NavLink>
+        <NavLink to="/medical-assistant" className={navItem}>
+          <li>Medical Assistant</li>
+        </NavLink>
 
-        <NavLink to="/about" className={navItem}><li>About</li></NavLink>
+        <NavLink to="/about" className={navItem}>
+          <li>About</li>
+        </NavLink>
 
-        <NavLink to="/contact" className={navItem}><li>Contact</li></NavLink>
-
+        <NavLink to="/contact" className={navItem}>
+          <li>Contact</li>
+        </NavLink>
       </ul>
 
       {/* Right Side */}
       <div className="flex items-center gap-4">
-
         {/* Logged In */}
         {token && userData ? (
           <div className="flex items-center gap-2 cursor-pointer relative group">
@@ -78,23 +86,32 @@ function Navbar() {
             {/* Dropdown */}
             <div className="absolute right-0 top-full mt-3 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-20">
               <div className="min-w-48 bg-white shadow-xl rounded-lg flex flex-col gap-3 p-4 text-sm text-gray-700">
-                <p onClick={() => navigate("/my-profile")} className="hover:text-primary cursor-pointer">
+                <p
+                  onClick={() => navigate("/my-profile")}
+                  className="hover:text-primary cursor-pointer"
+                >
                   My Profile
                 </p>
-                <p onClick={() => navigate("/my-appointments")} className="hover:text-primary cursor-pointer">
+
+                <p
+                  onClick={() => navigate("/my-appointments")}
+                  className="hover:text-primary cursor-pointer"
+                >
                   My Appointments
                 </p>
-                <p onClick={logout} className="hover:text-red-500 cursor-pointer">
+
+                <p
+                  onClick={logout}
+                  className="hover:text-red-500 cursor-pointer"
+                >
                   Logout
                 </p>
               </div>
             </div>
           </div>
         ) : (
-
           /* Logged Out Buttons */
           <div className="hidden md:flex items-center gap-3">
-
             <button
               onClick={() => navigate("/login")}
               className="px-8 py-3 rounded-full font-light border border-primary text-primary
@@ -110,7 +127,6 @@ function Navbar() {
             >
               Doctor / Admin
             </button>
-
           </div>
         )}
 
@@ -128,10 +144,10 @@ function Navbar() {
             showMenu ? "translate-x-0" : "translate-x-full"
           }`}
         >
-
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-5 border-b">
             <img className="w-32" src={assets.logo} alt="logo" />
+
             <img
               onClick={() => setShowMenu(false)}
               className="w-6 cursor-pointer"
@@ -142,12 +158,54 @@ function Navbar() {
 
           {/* Links */}
           <ul className="flex flex-col gap-6 px-8 py-8 text-lg font-medium">
+            <NavLink
+              onClick={() => setShowMenu(false)}
+              to="/"
+              end
+              className={mobileItem}
+            >
+              Home
+            </NavLink>
 
-            <NavLink onClick={() => setShowMenu(false)} to="/" end className={mobileItem}>Home</NavLink>
-            <NavLink onClick={() => setShowMenu(false)} to="/doctors" className={mobileItem}>All Doctors</NavLink>
-            <NavLink onClick={() => setShowMenu(false)} to="/ai-consult" className={mobileItem}>AI Recommend</NavLink>
-            <NavLink onClick={() => setShowMenu(false)} to="/about" className={mobileItem}>About</NavLink>
-            <NavLink onClick={() => setShowMenu(false)} to="/contact" className={mobileItem}>Contact</NavLink>
+            <NavLink
+              onClick={() => setShowMenu(false)}
+              to="/doctors"
+              className={mobileItem}
+            >
+              All Doctors
+            </NavLink>
+
+            <NavLink
+              onClick={() => setShowMenu(false)}
+              to="/ai-consult"
+              className={mobileItem}
+            >
+              AI Recommend
+            </NavLink>
+
+            <NavLink
+              onClick={() => setShowMenu(false)}
+              to="/medical-assistant"
+              className={mobileItem}
+            >
+              Medical Assistant
+            </NavLink>
+
+            <NavLink
+              onClick={() => setShowMenu(false)}
+              to="/about"
+              className={mobileItem}
+            >
+              About
+            </NavLink>
+
+            <NavLink
+              onClick={() => setShowMenu(false)}
+              to="/contact"
+              className={mobileItem}
+            >
+              Contact
+            </NavLink>
 
             {!token && (
               <>
