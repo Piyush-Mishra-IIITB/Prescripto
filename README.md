@@ -1,5 +1,4 @@
-
-# Prescripto -- AI-Powered Doctor Appointment & Tele-Consultation Platform
+# Prescripto --- AI-Powered Doctor Appointment & Tele-Consultation Platform
 
 Prescripto is a full-stack healthcare platform combining AI-assisted
 specialist recommendation, doctor appointment booking, online payments,
@@ -14,6 +13,7 @@ real-time communication, and WebRTC-based video consultation.
 -   **Admin Panel:** https://medlink360-admin.onrender.com
 -   **Backend API:** https://medlink-backend-2bgo.onrender.com
 -   **AI Service:** https://medlink360.onrender.com
+-   **RAG Medical Assistant:** Not currently deployed
 
 ------------------------------------------------------------------------
 
@@ -102,6 +102,99 @@ The ML inference service uses Python, FastAPI, Scikit-learn, and Joblib.
 
 ------------------------------------------------------------------------
 
+# 🧠 RAG Medical Assistant
+
+Prescripto also contains a separate Retrieval-Augmented Generation (RAG)
+service for general medical information retrieval.
+
+``` mermaid
+flowchart LR
+    U[Patient Query] --> API[Node.js Backend]
+    API --> RAG[FastAPI RAG Service]
+    RAG --> EMB[BAAI/bge-small-en-v1.5]
+    EMB --> FAISS[(FAISS Vector Store)]
+    FAISS --> RET[Relevant Medical Context]
+    RET --> GEM[Gemini]
+    GEM --> RAG
+    RAG --> API
+    API --> U
+```
+
+The RAG pipeline consists of:
+
+``` text
+Medical Documents
+       │
+       ▼
+Document Ingestion
+       │
+       ▼
+Text Chunking
+       │
+       ▼
+BGE Embeddings
+       │
+       ▼
+FAISS Index
+       │
+       ▼
+Semantic Retrieval
+       │
+       ▼
+Relevant Context
+       │
+       ▼
+Gemini
+       │
+       ▼
+Medical Information Response
+```
+
+### RAG Service Structure
+
+``` text
+rag-service/
+├── app/
+│   ├── ingest.py
+│   ├── embeddings.py
+│   ├── build_index.py
+│   ├── retriever.py
+│   ├── generator.py
+│   └── main.py
+├── data/
+│   └── documents/
+│       ├── hypertension.md
+│       ├── diabetes.md
+│       ├── asthma.md
+│       ├── gerd.md
+│       ├── migraine.md
+│       ├── common-cold.md
+│       ├── pneumonia.md
+│       └── fever.md
+├── vectorstore/
+│   ├── index.faiss
+│   └── metadata.json
+└── requirements.txt
+```
+
+The RAG service uses Sentence Transformers with `BAAI/bge-small-en-v1.5`,
+FAISS for vector retrieval, and Gemini for response generation.
+
+> **Deployment status:** The RAG service is implemented and tested locally,
+> but is currently not deployed because the embedding model exceeds the
+> memory available in the free hosting environment. The implementation
+> remains in the repository for future deployment on a higher-memory
+> environment.
+
+The Medical Assistant page remains available in the application and
+currently displays that the assistant is unavailable.
+
+> The RAG assistant is intended for general medical education only. It is
+> not a diagnostic or treatment system and should not replace professional
+> medical advice.
+
+------------------------------------------------------------------------
+
 # 🏗️ System Architecture
 
 ``` mermaid
@@ -158,6 +251,30 @@ TTL:
 The cache is invalidated whenever relevant doctor availability or
 appointment-slot data changes.
 
+## Appointment Distributed Locking
+
+``` mermaid
+sequenceDiagram
+    participant P1 as Booking Request A
+    participant R as Redis
+    participant DB as MongoDB
+    participant P2 as Booking Request B
+
+    P1->>R: SET slot lock NX
+    R-->>P1: Lock acquired
+
+    P2->>R: SET same lock NX
+    R-->>P2: Lock rejected
+
+    P1->>DB: Check slot
+    P1->>DB: Create appointment
+    P1->>DB: Update doctor slots
+    P1->>R: Invalidate doctor cache
+    P1->>R: Release lock
+```
+
+The booking lock uses a unique token, `NX`, an expiration, and an atomic
+token-checked release.
 
 ------------------------------------------------------------------------
 
@@ -248,6 +365,7 @@ room readiness, duplicate peers, and disconnects.
   Payments          Razorpay
   Media Storage     Cloudinary, Multer
   ML                Python, FastAPI, Scikit-learn, Joblib
+  RAG               FastAPI, FAISS, Sentence Transformers, Gemini
   Deployment        Render
 
 ------------------------------------------------------------------------
@@ -298,6 +416,12 @@ room readiness, duplicate peers, and disconnects.
   -------- ------------ ----------------------------------
   POST     `/predict`   Predict specialist from symptoms
 
+## RAG Medical Assistant --- `/api/rag`
+
+  Method   Endpoint     Description
+  -------- ------------ ----------------------------------
+  POST     `/chat`      Retrieve medical context and generate an answer
+
 ------------------------------------------------------------------------
 
 # 📁 Project Structure
@@ -321,6 +445,11 @@ Doctor-client/
 │   ├── package.json
 │   └── .env
 ├── ml-service/
+├── rag-service/
+│   ├── app/
+│   ├── data/
+│   ├── vectorstore/
+│   └── requirements.txt
 ├── .gitignore
 └── README.md
 ```
@@ -365,6 +494,30 @@ pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
+### RAG Service
+
+The RAG service is currently intended for local development/testing.
+
+``` bash
+cd rag-service
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python -m uvicorn app.main:app --reload --port 8001
+```
+
+On Windows:
+
+``` bash
+venv\\Scripts\\activate
+```
+
+Local RAG service:
+
+``` text
+http://127.0.0.1:8001
+```
+
 ------------------------------------------------------------------------
 
 # 🔐 Environment Variables
@@ -386,6 +539,8 @@ RAZORPAY_SECRET=
 
 ML_API_URL=
 
+RAG_SERVICE_URL=
+
 REDIS_URL=
 ```
 
@@ -393,6 +548,18 @@ For local Redis:
 
 ``` env
 REDIS_URL=redis://localhost:6379
+```
+
+For local RAG:
+
+``` env
+RAG_SERVICE_URL=http://127.0.0.1:8001
+```
+
+### RAG Service
+
+``` env
+GEMINI_API_KEY=
 ```
 
 For production, configure `REDIS_URL` using the Redis connection URL
@@ -411,6 +578,8 @@ provided by the deployment platform.
 -   Environment-based secrets
 -   Protected admin/doctor operations
 -   Redis distributed locking for appointment concurrency
+-   Authenticated RAG service integration
+-   Environment-based RAG configuration
 
 ------------------------------------------------------------------------
 
@@ -420,6 +589,10 @@ provided by the deployment platform.
     specialist.
 -   **Separate ML service:** FastAPI provides independent model
     inference.
+-   **RAG medical assistant:** FAISS retrieval and Gemini generation
+    provide grounded medical information responses.
+-   **Separate RAG service:** FastAPI isolates retrieval and generation
+    from the main backend.
 -   **Redis caching:** frequently requested doctor data is cached.
 -   **Distributed locking:** concurrent requests for the same
     appointment slot are serialized.
@@ -458,7 +631,66 @@ provided by the deployment platform.
 
 ------------------------------------------------------------------------
 
+# 🧪 RAG Deployment Status
 
+The RAG Medical Assistant is implemented and works locally.
+
+Production deployment is currently deferred because the Sentence Transformer
+embedding model requires more memory than the available free hosting
+environment provides.
+
+``` text
+RAG Implementation        → ✅ Complete
+RAG Local Testing         → ✅ Complete
+Backend Integration       → ✅ Complete
+Production Deployment     → ⏸️ Deferred
+```
+
+The RAG code, medical documents, FAISS index, and metadata remain in the
+repository so the service can be deployed later on a higher-memory platform.
+
+------------------------------------------------------------------------
+
+# 🚀 Production Architecture
+
+``` mermaid
+flowchart TB
+    USER[Patient]
+    DOC[Doctor]
+    ADMIN[Admin]
+
+    APP[React Patient App]
+    ADMINAPP[React Admin Panel]
+    API[Node.js / Express Backend]
+
+    MONGO[(MongoDB)]
+    REDIS[(Redis)]
+    ML[FastAPI ML Service]
+    RAZORPAY[Razorpay]
+    CLOUD[Cloudinary]
+    SOCKET[Socket.IO]
+    RTC[WebRTC]
+
+    USER --> APP
+    DOC --> APP
+    ADMIN --> ADMINAPP
+
+    APP --> API
+    ADMINAPP --> API
+
+    API --> MONGO
+    API --> REDIS
+    API --> ML
+    API --> RAZORPAY
+    API --> CLOUD
+    API --> SOCKET
+
+    SOCKET --> RTC
+    USER -. Media .-> RTC
+    DOC -. Media .-> RTC
+```
+
+------------------------------------------------------------------------
 
 # 🏁 Project Summary
 
